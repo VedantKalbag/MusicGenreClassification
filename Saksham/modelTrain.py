@@ -38,11 +38,11 @@ class AugmentedDataset(keras.utils.Sequence):
         self.batch_size = batch_size
         self.mode = mode
         if self.mode == 'train':
-            self.data_path = '../datasets/gtzan10sAug/vedant/train'
+            self.data_path = '../datasets/gtzan10sAug/Final/features/train'
         if self.mode == 'test':
-            self.data_path = '../datasets/gtzan10sAug/vedant/test'
+            self.data_path = '../datasets/gtzan10sAug/Final/features/test'
         if self.mode == 'val':
-            self.data_path = '../datasets/gtzan10sAug/vedant/val'
+            self.data_path = '../datasets/gtzan10sAug/Final/features/val'
         _,_,self.filenames = next(os.walk(self.data_path))
         
     def __len__(self):
@@ -168,29 +168,6 @@ def main(path, num_epochs, modelname, batchSize, blockLength, hopLength):
     train_dataset = AugmentedDataset('train', batchSize)
     test_dataset = AugmentedDataset('test', batchSize)
     val_dataset = AugmentedDataset('val', batchSize)
-    
-    le = preprocessing.LabelEncoder()
-
-    # TODO: LOAD X AND y
-    df = readFeatureFile(path, blockLength, hopLength)
-    X = np.stack(df['melspec'].values)
-    y = df['label'].to_numpy()
-    print (f'X shape: {X.shape}, Y shape: {y.shape}')
-    # y = le.fit_transform(y)
-    # Checkpoint: Clear
-
-    # x_train, x_val, y_train, y_val = train_test_split(X, y, test_size=0.30, shuffle=True, random_state=42)
-    # x_test, x_val, y_test, y_val = train_test_split(x_val, y_val, test_size=0.50, shuffle=True, random_state=42)
-    # train = tf.data.Dataset.from_tensor_slices((x_train, y_train))
-    # train = train.shuffle(buffer_size=200).batch(batchsize)
-    # val = tf.data.Dataset.from_tensor_slices((x_val, y_val)).batch(batchsize)
-    # test = tf.data.Dataset.from_tensor_slices((x_test, y_test)).batch(batchsize)
-    # trans = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-
-   # train = tf.data.Dataset.from_tensor_slices((x_train, y_train))
-   # train = train.shuffle(buffer_size=1000).batch(256)
-   # val = tf.data.Dataset.from_tensor_slices((x_val, y_val)).batch(256)
-   # test = tf.data.Dataset.from_tensor_slices((x_test, y_test)).batch(256)
 
     print('Running ', modelname, ' model')
     if bool(config.multigpu):
@@ -202,10 +179,10 @@ def main(path, num_epochs, modelname, batchSize, blockLength, hopLength):
             # Everything that creates variables should be under the strategy scope.
             # In general this is only model construction & `compile()`.
             # model = get_compiled_model()
-            model = build_model(modelname, (x_train.shape[1], x_train.shape[2]), 10)
+            model = build_model(modelname, next(iter(train_dataset))[0][0].shape, 10)
             model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3), loss='sparse_categorical_crossentropy',   metrics=['acc'])
     else:
-        model = build_model(modelname, (x_train.shape[1], x_train.shape[2]), 10)
+        model = build_model(modelname, next(iter(train_dataset))[0][0].shape, 10)
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3), loss='sparse_categorical_crossentropy',   metrics=['acc'])
     checkpoint_path = f'tmp/model_10s_{config.audioType}_{modelname}_a{config.a}_min{config.min_snr}_max{config.max_snr}_{config.blockLength}block_{config.hopLength}slide'
     checkpoint_dir = os.path.dirname(checkpoint_path)
@@ -223,8 +200,7 @@ def main(path, num_epochs, modelname, batchSize, blockLength, hopLength):
         )
     model.save_weights(checkpoint_path+"-{epoch}/model.ckpt".format(epoch=0))
     try:
-        history = model.fit(train_dataset, validation_data=val, epochs=num_epochs, callbacks=[model_checkpoint_callback,saver])
-        history = model.fit(X, y, validation_data=val, epochs=num_epochs, callbacks=[model_checkpoint_callback,saver])
+        history = model.fit(train_dataset, validation_data=val_dataset, epochs=num_epochs, callbacks=[model_checkpoint_callback,saver])
         test_acc = model.evaluate(test, return_dict=True)
         history.history['test_acc'] = test_acc['acc']
         history.history['test_loss'] = test_acc['loss']
