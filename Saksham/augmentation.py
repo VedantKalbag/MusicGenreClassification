@@ -1,20 +1,35 @@
+import argparse
+parser = argparse.ArgumentParser()
+# Model configuration.
+parser.add_argument('--a', type=float, default=0.5, help='IR blend factor')
+parser.add_argument('--min_snr', type=float, default=1.0, help='Min SNR for background noise')
+parser.add_argument('--max_snr', type=float, default=10.0, help='Max SNR for background noise')
+parser.add_argument('--nBG', type=int, default=1, help='Number of BG noise samples applied to each sample')
+parser.add_argument('--nIR', type=int, default=1, help='Number of IR noise samples applied to each sample')
+parser.add_argument('--save_path', type=str, default="../datasets/gtzan10sAug/", help="Output path")
+
+import warnings
+warnings.filterwarnings("ignore")
+
 import numpy as np
 import pandas as pd
 import os
 import glob
 import librosa
 import soundfile as sf
+from tqdm import tqdm
 import random
 # from tqdm import tqdm
 import audiomentations
 from util import *
 from audiomentations import Compose, AddGaussianNoise, AddBackgroundNoise, ApplyImpulseResponse
+config = parser.parse_args()
+print(config)
+a = config.a#0.5   # blend factor
+min_snr = config.min_snr#1.0
+max_snr = config.max_snr#10.0
 
-a = 0.5   # blend factor
-min_snr = 1.0
-max_snr = 10.0
-
-noisePath = '../datasets/TAU/audio/airport-barcelona-0-0-a.wav'
+# noisePath = '../datasets/TAU/audio/airport-barcelona-0-0-a.wav'
 # audioName = 'blues.00000.0'
 # audioPath = f'../datasets/gtzan10s/blues/{audioName}.wav'
 audioPath = f'../datasets/gtzan10s/'
@@ -22,8 +37,9 @@ irPath = '../datasets/IR_MIT/'
 bgPath = '../datasets/TAU/audio/'
 IRsavePath = f'../datasets/gtzan10sAug/IR/audio/a{a}/'
 dfPath = '../datasets/gtzan10sAug/AugDatasetDesc.csv'
-nBG = 5
-nIR = 3
+nBG = config.nBG#5
+nIR = config.nIR#3
+output_path = config.save_path
 
 # Total num of audio files - 44946
 # Total num of BG files - 14400
@@ -108,7 +124,7 @@ def addBG(x, sr, noisePath, min_snr, max_snr):
 
 def addIR(x, IRnoisePath, a):
     irname = IRnoisePath.split('/')[-1].split('.')[0]
-    print(IRnoisePath)
+    # print(IRnoisePath)
     # print (f'{irname}_{audioName}.wav')
     ir, fs = librosa.load(IRnoisePath, sr=22050)
     ##### Convolve audio sample with the IR
@@ -130,19 +146,19 @@ def genDatasetDF(audioPath, bgPath, irPath, nBG, nIR):
                 nIRPaths = readNoisePaths(irPath, nIR)
                 for IRnoisePath in nIRPaths:
                     df = df.append({'audioPath' : path, 'IRPath' : IRnoisePath, 'BGPath' : noisePath, 'fname' : fname, 'label' : subdir}, ignore_index = True)
-    df.to_csv('../datasets/gtzan10sAug/AugDatasetDesc.csv', index = False)
+    df.to_csv(f'{output_path}/AugDatasetDesc.csv', index = False)
     return df
 
 def augmentAudio(dfPath, min_snr, max_snr, a):
     # read csv
     df = pd.read_csv(dfPath)
-    print (df.head())
+    # print (df.head())
     audioPaths = df['audioPath'].tolist()
     IRPaths = df['IRPath'].tolist()
     BGPaths = df['BGPath'].tolist()
     fnames = df['fname'].tolist()
     labels = df['label'].tolist()
-    for i in np.arange(len(audioPaths)):
+    for i in tqdm(np.arange(len(audioPaths))):
         # Read audio
         x, sr = librosa.load(audioPaths[i])
 
@@ -152,13 +168,16 @@ def augmentAudio(dfPath, min_snr, max_snr, a):
         # Add BG noise
         augmentBGAudio, bgname = addBG(conv, sr, BGPaths[i], min_snr, max_snr)
         
-        finalSavePath = f'../datasets/gtzan10sAug/Final/audio/a{a}_min{min_snr}_max{max_snr}/{labels[i]}/'
+        finalSavePath = f'{output_path}/Final/audio/a{a}_min{min_snr}_max{max_snr}/{labels[i]}/'
+        if not os.path.exists(finalSavePath):
+            os.makedirs(finalSavePath)
         finalFileName = f'{fnames[i]}_{bgname}_{irname}.wav'
-        print(f'Done: {finalFileName}')
+        # print(f'Done: {finalFileName}')
         sf.write(f'{finalSavePath}{finalFileName}', augmentBGAudio, sr, subtype='PCM_24')
-        print (i)
+        # print (i)
         i += 1
 
-augmentAudio(dfPath, min_snr, max_snr, a)
+if __name__ == '__main__':
+    augmentAudio(dfPath, min_snr, max_snr, a)
 
 # df = genDatasetDF(audioPath, bgPath, irPath, nBG, nIR)

@@ -36,11 +36,11 @@ class AugmentedDataset(keras.utils.Sequence):
         self.batch_size = batch_size
         self.mode = mode
         if self.mode == 'train':
-            self.data_path = '../../datasets/gtzan10sAug/vedant/train'
+            self.data_path = '../../datasets/gtzan10sAug/Final/features/train'
         if self.mode == 'test':
-            self.data_path = '../../datasets/gtzan10sAug/vedant/test'
+            self.data_path = '../../datasets/gtzan10sAug/Final/features/test'
         if self.mode == 'val':
-            self.data_path = '../../datasets/gtzan10sAug/vedant/val'
+            self.data_path = '../../datasets/gtzan10sAug/Final/features/val'
         _,_,self.filenames = next(os.walk(self.data_path))
 
     def __len__(self):
