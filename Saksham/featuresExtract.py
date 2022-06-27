@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import pandas as pd
 import os
@@ -9,15 +10,39 @@ import soundfile as sf
 from tqdm import tqdm
 import os
 from util import *
+import warnings
+warnings.filterwarnings("ignore")
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--blockLength', type=float, default = 3.0, help='Analysis window size')
+parser.add_argument('--hopLength', type=float, default = 0.5, help='Slide duration')
+parser.add_argument('--a', type=float, default=0.5, help='IR blend factor')
+parser.add_argument('--min_snr', type=float, default=1.0, help='Min SNR for background noise')
+parser.add_argument('--max_snr', type=float, default=10.0, help='Max SNR for background noise')
+parser.add_argument('--datasetDir', type=str, default="../datasets/gtzan10sAug/datasets/", help="Main directory with subdirs of all generated datasets")
+parser.add_argument('--datasetName', type=str, default="test", help="Output path of augmented audio subdirectories. Do not add a '/' after dir name in input")
+parser.add_argument('--overwrite', type=str, default="n", help="Overwrite existing directory - y/n")
+config = parser.parse_args()
+
+datasetPath = config.datasetDir + config.datasetName + '/'
+if not os.path.exists(datasetPath):
+    os.makedirs(datasetPath)
+
+savePath = datasetPath + 'features/'
+if not os.path.exists(savePath):
+    os.makedirs(savePath)
 
 if __name__ == '__main__':
-    blockLength = 3.0
-    hopLength = 0.5
-    fs = 22050
-    a = 0.5
-    min_snr = 1.0
-    max_snr = 10.0
-    path = f'../datasets/gtzan10sAug/Final/audio/a{a}_min{min_snr}_max{max_snr}/'
-    # print (path)
-    savePath = f'../datasets/gtzan10sAug/Final/features/a{a}_min{min_snr}_max{max_snr}_'
-    genDataset(path, savePath, blockLength, hopLength)
+    # Path to save the final feature set file
+    featureSetPath = f'{savePath}a{a}_min{min_snr}_max{max_snr}_{blockLength}s_block_{hopLength}s_hop.npy'
+    
+    if not os.path.exists(featureSetPath):
+        # Generate feature dataset from audio dataset
+        genDataset(datasetPath, savePath, config.blockLength, config.hopLength, config.a, config.min_snr, config.max_snr)
+    
+    elif config.overwrite == 'y':
+        # Generate feature dataset from audio dataset
+        genDataset(datasetPath, savePath, config.blockLength, config.hopLength, config.a, config.min_snr, config.max_snr)
+    
+    else:
+        print ('Feature file already exists. Re-run the script with "--overwrite y" in the terminal to overwrite the existing dataset')
