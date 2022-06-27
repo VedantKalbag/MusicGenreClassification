@@ -11,7 +11,9 @@ from tqdm import tqdm
 import os
 import scipy.signal as sp
 
-def genDataset(path, savePath, blockLength, hopLength):
+def genDataset(path, audioPath, savePath, blockLength, hopLength, a, min_snr, max_snr):
+    # path = os.path.join(path, audioPath)
+    print (path)
     dirName, subdirList, _ = next(os.walk(path))
     # Create list of files in each subdir
     df = pd.DataFrame(columns = ['melspec', 'label', 'filename'])
@@ -37,7 +39,7 @@ def genDataset(path, savePath, blockLength, hopLength):
                 continue
     print (df.count())
     out = df.to_numpy()
-    np.save(f'{savePath}{blockLength}s_block_{hopLength}s_hop.npy', out)
+    np.save(f'{savePath}a{a}_min{min_snr}_max{max_snr}_{blockLength}s_block_{hopLength}s_hop.npy', out)
 
 def extractFeaturesFromFile(x, sr, blockLength, hopLength, df, fname, subdir):
     blockSamples = int(blockLength*sr)
@@ -140,51 +142,3 @@ def IRReviewFileGen(path):
     df['fname'] = filenames
     print (df.head())
     df.to_csv('IRReview.csv', index = False)
-
-
-## Create an array of all audiofiles in the given folder
-def findAudioFiles():
-    ## Create an array of all audiofiles in the given folder
-    pass
-
-## Process to read an audiofile from a folder - 2 versions: GTZAN structure and reading audio from a folder structure
-def readAudio():
-    pass
-
-## slice audio file into chunks - Write a function for just doing this
-def sliceAudio():
-    ## slice audio file into chunks - Write a function for just doing this
-    pass
-
-## extract features from the chunk
-def extractFeatures():
-    pass
-
-
-# Generated dataset of 10s clips from any given audioFolder
-def gen10sClips():
-    # Generated dataset of 10s clips from any given audioFolder
-    # input: Path of the folder with audio files. So for GTZAN, it'll be in a for loop of subdirs
-    readAudio
-    pass
-
-
-## Initialize arrays, dfs and params
-## Apply on the array of audio files
-def wrapper():
-    ## Apply on the array of audio files
-    
-    #initializeParams
-    
-    readAudio()
-    
-    sliceAudio()
-    
-    extractFeatures()
-
-    #appendFeatures
-
-
-
-
-## 
