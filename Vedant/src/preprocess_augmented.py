@@ -19,7 +19,7 @@ import json
 import gc
 
 # LOAD THE .NPY FILE CONTAINING ALL ROWS
-df = pd.DataFrame(np.load('../datasets/gtzan10sAug/Final/features/a0.5_min1.0_max10.0_3.0s_block_0.5s_hop.npy', allow_pickle=True), columns=['melspec','label','filename'])
+df = pd.DataFrame(np.load('../../datasets/gtzan10sAug/vedant/Final/features/3.0s_block_0.5s_hop.npy', allow_pickle=True), columns=['melspec','label','filename'])
 X = np.stack(df[['melspec','filename']].values)
 y = df['label'].to_numpy()
 names = df['filename'].to_numpy()
@@ -43,7 +43,7 @@ df['label'] = y_train
 df['filename'] = x_train[:,1]
 for idx, row in tqdm(df.iterrows()):
     # filename = row['filename']
-    np.save(f'../../datasets/gtzan10sAug/vedant/train/{idx}.npy',row[['melspec','label']])
+    np.save(f'../../datasets/gtzan10sAug/vedant/singleaug/train/{idx}.npy',row[['melspec','label']])
 
 # SAVE TEST DATA AS INDIVIDUAL ROWS
 df=pd.DataFrame()
@@ -52,7 +52,7 @@ df['label'] = y_test
 df['filename'] = x_test[:,1]
 for idx, row in tqdm(df.iterrows()):
     # filename = row['filename']
-    np.save(f'../../datasets/gtzan10sAug/vedant/test/{idx}.npy',row[['melspec','label']])
+    np.save(f'../../datasets/gtzan10sAug/vedant/singleaug/test/{idx}.npy',row[['melspec','label']])
 
 # SAVE VAL DATA AS INDIVIDUAL ROWS
 df=pd.DataFrame()
@@ -61,4 +61,4 @@ df['label'] = y_val
 df['filename'] = x_val[:,1]
 for idx, row in tqdm(df.iterrows()):
     # filename = row['filename']
-    np.save(f'../../datasets/gtzan10sAug/vedant/val/{idx}.npy',row[['melspec','label']])
+    np.save(f'../../datasets/gtzan10sAug/vedant/singleaug/val/{idx}.npy',row[['melspec','label']])
