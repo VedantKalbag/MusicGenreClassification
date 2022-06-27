@@ -13,8 +13,7 @@ import scipy.signal as sp
 
 def genDataset(path, audioPath, savePath, blockLength, hopLength, a, min_snr, max_snr):
     # path = os.path.join(path, audioPath)
-    print (path)
-    dirName, subdirList, _ = next(os.walk(path))
+    dirName, subdirList, _ = next(os.walk(audioPath))
     # Create list of files in each subdir
     df = pd.DataFrame(columns = ['melspec', 'label', 'filename'])
     for subdir in subdirList:
@@ -23,7 +22,7 @@ def genDataset(path, audioPath, savePath, blockLength, hopLength, a, min_snr, ma
         for filename in tqdm(fileList):
             fname = filename.split('/')[-1]
             try:
-                fpath = f'{path}{subdir}/{filename}'
+                fpath = f'{audioPath}{subdir}/{filename}'
                 x, sr = librosa.load(fpath)
                 blockSamples = int(blockLength*sr)
                 hopSamples = int(hopLength*sr)

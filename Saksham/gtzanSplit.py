@@ -1,3 +1,6 @@
+"""Split dataset as per https://github.com/jongpillee/music_dataset_split/tree/master/GTZAN_split 
+to remove artist bias"""
+
 import pandas as pd
 import numpy as np
 import os, glob
@@ -18,9 +21,6 @@ parser.add_argument('--datasetDir', type=str, default="../datasets/gtzan10sAug/d
 parser.add_argument('--datasetName', type=str, default="test", help="Output path of augmented audio subdirectories. Do not add a '/' after dir name in input")
 parser.add_argument('--overwrite', type=str, default="n", help="Overwrite existing directory - y/n")
 config = parser.parse_args()
-
-"""Split dataset as per https://github.com/jongpillee/music_dataset_split/tree/master/GTZAN_split 
-to remove artist bias"""
 
 def readSplitFile(path):
     """ Read filenames from the artist biased removed master files for train/ test/ val subset."""

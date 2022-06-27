@@ -28,21 +28,23 @@ datasetPath = config.datasetDir + config.datasetName + '/'
 if not os.path.exists(datasetPath):
     os.makedirs(datasetPath)
 
+audioPath = datasetPath + f'audio/a{config.a}_min{config.min_snr}_max{config.max_snr}/'
+
 savePath = datasetPath + 'features/'
 if not os.path.exists(savePath):
     os.makedirs(savePath)
 
 if __name__ == '__main__':
     # Path to save the final feature set file
-    featureSetPath = f'{savePath}a{a}_min{min_snr}_max{max_snr}_{blockLength}s_block_{hopLength}s_hop.npy'
+    featureSetPath = f'{savePath}a{config.a}_min{config.min_snr}_max{config.max_snr}_{config.blockLength}s_block_{config.hopLength}s_hop.npy'
     
     if not os.path.exists(featureSetPath):
         # Generate feature dataset from audio dataset
-        genDataset(datasetPath, savePath, config.blockLength, config.hopLength, config.a, config.min_snr, config.max_snr)
+        genDataset(datasetPath, audioPath, savePath, config.blockLength, config.hopLength, config.a, config.min_snr, config.max_snr)
     
     elif config.overwrite == 'y':
         # Generate feature dataset from audio dataset
-        genDataset(datasetPath, savePath, config.blockLength, config.hopLength, config.a, config.min_snr, config.max_snr)
+        genDataset(datasetPath, audioPath, savePath, config.blockLength, config.hopLength, config.a, config.min_snr, config.max_snr)
     
     else:
         print ('Feature file already exists. Re-run the script with "--overwrite y" in the terminal to overwrite the existing dataset')
