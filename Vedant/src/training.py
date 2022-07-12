@@ -2,6 +2,8 @@ import argparse
 from operator import truediv
 parser = argparse.ArgumentParser()
 # Model configuration.
+parser.add_argument('--data_path',type=str, default='', help='path to the folder containing train, test and val folders')
+parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
 parser.add_argument('--sr', type=int, default=22050, help='sample rate')
 parser.add_argument('--blocksize', type=int, default=3, help='Block Size')
 parser.add_argument('--hopsize', type=float, default=1.0, help='Hop Size')
@@ -12,6 +14,7 @@ parser.add_argument('--gpu', type=str, default=0, help='GPU to use for training'
 parser.add_argument('--log_step', type=int, default=10, help='log interval')
 parser.add_argument('--batch', type=int, default = 32, help='Batch Size')
 parser.add_argument('--suffix',type=str, default='', help='Model Name Suffix')
+parser.add_argument('--load_model',type=str, default='../../datasets/gtzan10sAug/datasets/test/features', help='path to pretrained model')
 config = parser.parse_args()
 print(config)
 import sys, os, pickle, numpy as np, pandas as pd
@@ -35,12 +38,13 @@ class AugmentedDataset(keras.utils.Sequence):
     def __init__(self, mode, batch_size):
         self.batch_size = batch_size
         self.mode = mode
-        if self.mode == 'train':
-            self.data_path = '../../datasets/gtzan10sAug/vedant/singleaug/train'
+        if self.mode == 'train': 
+            self.data_path = os.path.join(config.data_path, 'train')
         if self.mode == 'test':
-            self.data_path = '../../datasets/gtzan10sAug/vedant/singleaug/test'
+            self.data_path = os.path.join(config.data_path, 'test')
         if self.mode == 'val':
-            self.data_path = '../../datasets/gtzan10sAug/vedant/singleaug/val'
+            self.data_path = os.path.join(config.data_path, 'val')
+        # print(os.path.exists(self.data_path))
         _,_,self.filenames = next(os.walk(self.data_path))
 
     def __len__(self):
@@ -195,20 +199,24 @@ def main(num_epochs, modelname, batchsize, sr, blocksize, hopsize):
    # test = tf.data.Dataset.from_tensor_slices((x_test, y_test)).batch(256)
 
     print('Running ', modelname, ' model')
-    if bool(config.multigpu):
-        strategy = tf.distribute.MirroredStrategy(['GPU:1','GPU:2'])
-        print("Number of devices: {}".format(strategy.num_replicas_in_sync))
+    if config.load_model == '':
+        if bool(config.multigpu):
+            strategy = tf.distribute.MirroredStrategy(['GPU:1','GPU:2'])
+            print("Number of devices: {}".format(strategy.num_replicas_in_sync))
 
-        # Open a strategy scope.
-        with strategy.scope():
-            # Everything that creates variables should be under the strategy scope.
-            # In general this is only model construction & `compile()`.
-            # model = get_compiled_model()
+            # Open a strategy scope.
+            with strategy.scope():
+                # Everything that creates variables should be under the strategy scope.
+                # In general this is only model construction & `compile()`.
+                # model = get_compiled_model()
+                model = build_model(modelname, next(iter(train_dataset))[0][0].shape, 10)
+                model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=config.lr), loss='sparse_categorical_crossentropy',   metrics=['acc'])
+        else:
             model = build_model(modelname, next(iter(train_dataset))[0][0].shape, 10)
-            model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3), loss='sparse_categorical_crossentropy',   metrics=['acc'])
+            model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=config.lr), loss='sparse_categorical_crossentropy',   metrics=['acc'])
     else:
-        model = build_model(modelname, next(iter(train_dataset))[0][0].shape, 10)
-        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3), loss='sparse_categorical_crossentropy',   metrics=['acc'])
+        print(f'Loading model present at: {config.load_model}')
+        model = keras.models.load_model(config.load_model)
     # checkpoint_path = f"tmp/{modelname}"
     # checkpoint_dir = os.path.dirname(checkpoint_path)
 
@@ -237,11 +245,11 @@ def main(num_epochs, modelname, batchsize, sr, blocksize, hopsize):
         test_acc = model.evaluate(test_dataset, return_dict=True)
         history.history['test_acc'] = test_acc['acc']
         history.history['test_loss'] = test_acc['loss']
-        plot_history(modelname+config.suffix, history)
-        model.save(f'../models/model_{modelname}_{num_epochs}_{config.suffix}.h5')
+        plot_history(modelname+'_'+str(config.lr)+'_'+str(num_epochs)+'_'+config.suffix, history)
+        model.save(f'../models/model_{modelname}_{config.lr}_{num_epochs}_{config.suffix}.h5')
     except KeyboardInterrupt:
         print("\nKeyboard Interrupt, saving model")
-        model.save(f'../models/model_{modelname}_{num_epochs}_incomplete.h5')
+        model.save(f'../models/model_{modelname}_{config.lr}_{num_epochs}_incomplete.h5')
         sys.exit()
     #plot_model(model, show_shapes=True, to_file='model' + str(i) + '.png')
     K.clear_session()
