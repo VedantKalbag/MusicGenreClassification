@@ -5,6 +5,7 @@ RUN apt-get -y install git wget apt-utils libsndfile1 ffmpeg screen && \
     -p ssh-agent \
     -p https://github.com/zsh-users/zsh-autosuggestions \
     -p https://github.com/zsh-users/zsh-completions \
+    -p https://github.com/zsh-users/zsh-syntax-highlighting \
     -a alias gl="git log --oneline" \
     -a alias build="source ~/.zshrc" \
     -a alias config="code ~/.zshrc" \
