@@ -10,6 +10,7 @@ from sklearn import preprocessing
 from sklearn.utils import shuffle
 from tqdm import tqdm
 import argparse
+from util import *
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--blockLength', type=float, default = 3.0, help='Analysis window size')
@@ -20,33 +21,9 @@ parser.add_argument('--max_snr', type=float, default=10.0, help='Max SNR for bac
 parser.add_argument('--datasetDir', type=str, default="../datasets/gtzan10sAug/datasets/", help="Main directory with subdirs of all generated datasets")
 parser.add_argument('--datasetName', type=str, default="test", help="Output path of augmented audio subdirectories. Do not add a '/' after dir name in input")
 parser.add_argument('--overwrite', type=str, default="n", help="Overwrite existing directory - y/n")
+parser.add_argument('--balAug', type=bool, default=True, help="Use balanced train test split for all augmentations")
+parser.add_argument('--AEFeatureSet', type=bool, default=False, help="True for generating corresponding clean feature set for autoencoders")
 config = parser.parse_args()
-
-def readSplitFile(path):
-    """ Read filenames from the artist biased removed master files for train/ test/ val subset."""
-    # Input: path - path to master train test validate split files containing filenames
-    # returns lines: Array of all the files in that subset
-    with open(path) as f:
-        lines = f.readlines()
-        # lines = [line[:-1] for line in lines]
-        lines = [line.split('/')[1] for line in lines]
-        lines = [line.split('.')[0] + '.' + line.split('.')[1] for line in lines]
-        return lines
-
-def loadDF(path):
-    # Load the npy file containing features and labels for all samples
-    df = pd.DataFrame(np.load(path, allow_pickle=True), columns=['melspec','label','filename'])
-    # X = np.stack(df[['melspec']].values)
-    X = np.stack(df[['melspec', 'filename']].values)
-    y = df['label'].to_numpy()
-    fnames = df['filename'].to_numpy()
-    del df
-    gc.collect()
-    le = preprocessing.LabelEncoder()
-    y = le.fit_transform(y)
-    le_name_mapping = dict(zip(le.classes_, le.transform(le.classes_)))
-    # print(le_name_mapping)
-    return X, y, fnames
 
 def saveFnames(fnames, namesPath):
     # Get filenames from master feature files and save them in small chunks while clearing memory
@@ -86,17 +63,17 @@ def saveSubset(X, y, fnames, splitType, savePath):
     # Save the extracted subset for easy loading in the model
     
     # Save fnames to index rest of the dataset
-    np.savetxt(f'{savePath}{splitType}_shuffledNames.txt', fnames, fmt="%s")
+    np.savetxt(os.path.join(savePath, f'{splitType}_shuffledNames.txt'), fnames, fmt="%s")
     df=pd.DataFrame()
     df['melspec'] = list(X[:,0])
     df['label'] = y
     # Save shuffled fnames at a path
     for idx, row in tqdm(df.iterrows()):
-        print(f'{splitType}, {idx}')
-        tmp = f'{savePath}{splitType}/'
+        # print(f'{splitType}, {idx}')
+        tmp = os.path.join(savePath, splitType)
         if not os.path.exists(tmp):
             os.makedirs(tmp)
-        np.save(f'{savePath}{splitType}/{idx}.npy',row[['melspec','label']])
+        np.save(os.path.join(savePath, splitType, f'{idx}.npy'),row[['melspec','label']])
 
 def filteredSubset(splitPath, splitType, savePath, dfPath, namesPath):
     """
@@ -141,17 +118,31 @@ def filteredDataset(dfPath, savePath, namesPath):
         splitPath = f'gtzan_split/{splitType}_filtered.txt'
         filteredSubset(splitPath, splitType, savePath, dfPath, namesPath)
 
-if __name__ == '__main__':
-    datasetPath = config.datasetDir + config.datasetName + '/'
-    print (datasetPath)
-    
-    # Path to load the feature extraction df
-    dfPath = f'{datasetPath}features/a{config.a}_min{config.min_snr}_max{config.max_snr}_{config.blockLength}s_block_{config.hopLength}s_hop.npy'
-    
-    # Path to save final feature files split by subset: Saving function after every processing
-    savePath = f'{datasetPath}features/'
-    
-    # Path to save final names of all files in chunk for faster processing: Input to saveFnames
-    namesPath = f'{datasetPath}filenames/'
+def saveSubSetWrapper(X, y, fnames, splitType, datasetPath, audioType):
+    savePath = os.path.join(datasetPath, 'features', audioType)
+    if not os.path.exists(savePath):
+        os.makedirs(savePath)
+    saveSubset(X, y, fnames, splitType, savePath)
 
-    filteredDataset(dfPath, savePath, namesPath)
+
+def balAugFinalDataset(datasetPath, a, min_snr, max_snr, blockLength, hopLength, AEFeatureSet):
+    splitTypes = ['train', 'test', 'val']
+    for splitType in splitTypes:
+        # Load each subset
+        dfPath = os.path.join(datasetPath, 'features', f'augmentedAudio_{splitType}_a{a}_min{min_snr}_max{max_snr}_{blockLength}s_block_{hopLength}s_hop.npy')
+        X, y, fnames = loadDF(dfPath)
+        if AEFeatureSet == True:
+            dfPathClean = os.path.join(datasetPath, 'features', f'cleanAudio_{splitType}_a{a}_min{min_snr}_max{max_snr}_{blockLength}s_block_{hopLength}s_hop.npy')
+            Xclean, _, _ = loadDF(dfPathClean)
+            dfPathCleanPadded = os.path.join(datasetPath, 'features', f'cleanAudioPadded_{splitType}_a{a}_min{min_snr}_max{max_snr}_{blockLength}s_block_{hopLength}s_hop.npy')
+            XcleanPadded, _, _ = loadDF(dfPathCleanPadded)
+            dfPathAugTrimmed = os.path.join(datasetPath, 'features', f'augmentedAudioTrimmed_{splitType}_a{a}_min{min_snr}_max{max_snr}_{blockLength}s_block_{hopLength}s_hop.npy')
+            XAugTrimmed, yAugTrimmed, fnamesTrimmed = loadDF(dfPathAugTrimmed)
+        Xclean, yAugTrimmed, fnamesTrimmed, XAugTrimmed = shuffle(Xclean, yAugTrimmed, fnamesTrimmed, XAugTrimmed)
+        X, y, fnames, XcleanPadded = shuffle(X, y, fnames, XcleanPadded)
+        # Save fnames
+        saveSubSetWrapper(X, y, fnames, splitType, datasetPath, 'featuresAugmented')
+        if AEFeatureSet == True:
+            saveSubSetWrapper(Xclean, yAugTrimmed, fnamesTrimmed, splitType, datasetPath, 'featuresClean')
+            saveSubSetWrapper(XcleanPadded, y, fnames, splitType, datasetPath, 'featuresCleanPadded')
+            saveSubSetWrapper(XAugTrimmed, yAugTrimmed, fnamesTrimmed, splitType, datasetPath, 'featuresAugmentedTrimmed')

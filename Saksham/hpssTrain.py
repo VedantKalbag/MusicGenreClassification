@@ -1,20 +1,17 @@
 from util import *
 import argparse
+import sys, os, pickle, numpy as np, pandas as pd
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import models, layers, mixed_precision
-from tensorflow.keras.utils import plot_model
 from sklearn import preprocessing
 import sys
 from keras import backend as K
-from sklearn.model_selection import train_test_split, StratifiedKFold
 import matplotlib.pyplot as plt
 import json
-import sys, os, pickle, numpy as np, pandas as pd
+from keras import layers
 
 parser = argparse.ArgumentParser()
-# Model configuration.
-parser.add_argument('--epochs', type=int, default=15, help='num epochs')
+parser.add_argument('--epochs', type=int, default=50, help='num epochs')
 parser.add_argument('--model', type=str, default='Xception', help='model')
 parser.add_argument('--multigpu', type=int, default=0, help='Train on multiple GPUs')
 parser.add_argument('--gpu', type=str, default='0', help='GPU to use for training')
@@ -25,10 +22,14 @@ parser.add_argument('--audioType', type=str, default = 'Augmented', help='Slide 
 parser.add_argument('--a', type=float, default = 0.5, help='Blend factor')
 parser.add_argument('--min_snr', type=float, default = 1.0, help='Minimum snr for BG audio')
 parser.add_argument('--max_snr', type=float, default = 10.0, help='Maximum snr for BG audio')
-parser.add_argument('--batch', type=int, default = 512, help='Batch Size')
+parser.add_argument('--batch', type=int, default = 256, help='Batch Size')
 parser.add_argument('--datasetDir', type=str, default="../datasets/gtzan10sAug/datasets/", help="Main directory with subdirs of all generated datasets")
 parser.add_argument('--datasetName', type=str, default="test", help="Output path of augmented audio subdirectories. Do not add a '/' after dir name in input")
 parser.add_argument('--balAug', type=bool, default=True, help="Use balanced train test split for all augmentations")
+parser.add_argument('--AEFeatureSet', type=bool, default=False, help="True for generating corresponding clean feature set for autoencoders")
+parser.add_argument('--cleanTrain', type=bool, default=False, help="Type of data for training: clean/augmented")
+parser.add_argument('--cleanVal', type=bool, default=False, help="Type of data for training: clean/augmented")
+parser.add_argument('--dstype', type=str, default='harmonic', help="Type of dataset: Harmonic/ Percussive")
 
 config = parser.parse_args()
 
@@ -41,18 +42,51 @@ for gpu in gpus:
   tf.config.experimental.set_memory_growth(gpu, True)
 
 class AugmentedDataset(keras.utils.Sequence):
-    def __init__(self, mode, batch_size, path):
+    def __init__(self, mode, batch_size, path, dstype, cleanTrain, cleanVal):
+        # Choose dstype as harmonic/ percussive and cleanVal T/F for clean or aug validation set
         self.batch_size = batch_size
         self.mode = mode
-        if self.mode == 'train':
-            self.data_path = os.path.join(path, 'train')
-            print (self.data_path)
-        if self.mode == 'test':
-            self.data_path = os.path.join(path, 'test')
-            print (self.data_path)
-        if self.mode == 'val':
-            self.data_path = os.path.join(path, 'val')
-            print (self.data_path)
+        self.path = path
+        self.cleanTrain = cleanTrain
+        self.cleanVal = cleanVal
+        self.dstype = dstype
+
+        if dstype == 'harmonic':
+            if self.mode == 'train':
+                if self.cleanTrain == False:
+                    self.data_path = os.path.join(path, 'featuresAugH', 'train')
+                if self.cleanTrain == True:
+                    self.data_path = os.path.join(path, 'featuresCleanH', 'train')
+                print (self.data_path)
+            if self.mode == 'test':
+                if self.cleanVal == False:
+                    self.data_path = os.path.join(path, 'featuresAugH', 'test')
+                if self.cleanVal == True:
+                    self.data_path = os.path.join(path, 'featuresCleanH', 'test')
+            if self.mode == 'val':
+                if self.cleanTrain == False:
+                    self.data_path = os.path.join(path, 'featuresAugH', 'val')
+                if self.cleanTrain == True:
+                    self.data_path = os.path.join(path, 'featuresCleanH', 'val')
+
+        if dstype == 'percussive':
+            if self.mode == 'train':
+                if self.cleanTrain == False:
+                    self.data_path = os.path.join(path, 'featuresAugP', 'train')
+                if self.cleanTrain == True:
+                    self.data_path = os.path.join(path, 'featuresCleanP', 'train')
+                print (self.data_path)
+            if self.mode == 'test':
+                if self.cleanVal == False:
+                    self.data_path = os.path.join(path, 'featuresAugP', 'test')
+                if self.cleanVal == True:
+                    self.data_path = os.path.join(path, 'featuresCleanP', 'test')
+            if self.mode == 'val':
+                if self.cleanTrain == False:
+                    self.data_path = os.path.join(path, 'featuresAugP', 'val')
+                if self.cleanTrain == True:
+                    self.data_path = os.path.join(path, 'featuresCleanP', 'val')
+        
         _,_,self.filenames = next(os.walk(self.data_path))
         
     def __len__(self):
@@ -64,10 +98,9 @@ class AugmentedDataset(keras.utils.Sequence):
         batch = self.filenames[idx * self.batch_size : (idx+1) * self.batch_size]
         for i, ID in enumerate(batch):
             tmp = np.load(os.path.join(self.data_path, ID), allow_pickle=True)
-            X[i] = tmp[0]
+            X[i] = np.abs(tmp[0])
             y[i] = tmp[1]
 
-        # bat = np.array([np.load(os.path.join(self.data_path, x), allow_pickle=True) for x in batch])
         return X,y #bat[:,0], bat[:,1]
 
 class CustomSaver(keras.callbacks.Callback):
@@ -76,7 +109,7 @@ class CustomSaver(keras.callbacks.Callback):
             self.model.save("/models/model_{}.hd5".format(epoch))
 
 def plot_history(modelname, history):
-    with open(f'models/model_10s_{config.audioType}_{modelname}_a{config.a}_min{config.min_snr}_max{config.max_snr}_{config.blockLength}block_{config.hopLength}slide_{config.epochs}epochs.json', 'w') as fp:
+    with open(f'models/model_10s_{config.dstype}_train{config.cleanTrain}_val{config.cleanVal}_{modelname}_a{config.a}_min{config.min_snr}_max{config.max_snr}_{config.blockLength}block_{config.hopLength}slide_{config.epochs}epochs.json', 'w') as fp:
         json.dump(history.history, fp, indent=4)
 
     fig, ax = plt.subplots(2, figsize=(10,8))
@@ -96,7 +129,7 @@ def plot_history(modelname, history):
     ax[1].legend(loc='upper right')
     ax[1].set_title('Loss eval')
 
-    plt.savefig(f'models/model_10s_{config.audioType}_{modelname}_a{config.a}_min{config.min_snr}_max{config.max_snr}_{config.blockLength}block_{config.hopLength}slide_{config.epochs}epochs.png')
+    plt.savefig(f'models/model_10s_{config.dstype}_train{config.cleanTrain}_val{config.cleanVal}_{modelname}_a{config.a}_min{config.min_snr}_max{config.max_snr}_{config.blockLength}block_{config.hopLength}slide_{config.epochs}epochs.png')
 
 def build_model(name, shape, output):
     if name == 'CNN':
@@ -170,10 +203,10 @@ def build_model(name, shape, output):
         return keras.Model(inputs=inputs, outputs=outputs)
     
 
-def main(path, num_epochs, modelname, batchSize, blockLength, hopLength):
-    train_dataset = AugmentedDataset('train', batchSize, path)
-    test_dataset = AugmentedDataset('test', batchSize, path)
-    val_dataset = AugmentedDataset('val', batchSize, path)
+def main(path, num_epochs, modelname, batchSize, blockLength, hopLength, dstype, cleanTrain, cleanVal):
+    train_dataset = AugmentedDataset('train', batchSize, path, dstype, cleanTrain, cleanVal)
+    test_dataset = AugmentedDataset('test', batchSize, path, dstype, cleanTrain, cleanVal)
+    val_dataset = AugmentedDataset('val', batchSize, path, dstype, cleanTrain, cleanVal)
 
     print('Running ', modelname, ' model')
     if bool(config.multigpu):
@@ -190,7 +223,7 @@ def main(path, num_epochs, modelname, batchSize, blockLength, hopLength):
     else:
         model = build_model(modelname, next(iter(train_dataset))[0][0].shape, 10)
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3), loss='sparse_categorical_crossentropy',   metrics=['acc'])
-    checkpoint_path = f'tmp/model_10s_{config.audioType}_{modelname}_a{config.a}_min{config.min_snr}_max{config.max_snr}_{config.blockLength}block_{config.hopLength}slide_{num_epochs}epochs'
+    checkpoint_path = f'tmp/model_10s_{config.dstype}_train{config.cleanTrain}_val{config.cleanVal}_{modelname}_a{config.a}_min{config.min_snr}_max{config.max_snr}_{config.blockLength}block_{config.hopLength}slide_{num_epochs}epochs'
     checkpoint_dir = os.path.dirname(checkpoint_path)
 
     # checkpoint_filepath = './tmp/checkpoint_{epoch}.ckpt'
@@ -211,10 +244,10 @@ def main(path, num_epochs, modelname, batchSize, blockLength, hopLength):
         history.history['test_acc'] = test_acc['acc']
         history.history['test_loss'] = test_acc['loss']
         plot_history(modelname, history)
-        model.save(f'models/model_10s_{config.audioType}_{modelname}_a{config.a}_min{config.min_snr}_max{config.max_snr}_{config.blockLength}block_{config.hopLength}slide_{num_epochs}epochs.h5')
+        model.save(f'models/model_10s_{config.dstype}_train{config.cleanTrain}_val{config.cleanVal}_{modelname}_a{config.a}_min{config.min_snr}_max{config.max_snr}_{config.blockLength}block_{config.hopLength}slide_{num_epochs}epochs.h5')
     except KeyboardInterrupt:
         print("\nKeyboard Interrupt, saving model")
-        model.save(f'models/model_10s_{config.audioType}_{modelname}_a{config.a}_min{config.min_snr}_max{config.max_snr}_{config.blockLength}block_{config.hopLength}slide_{num_epochs}epochs.h5')
+        model.save(f'models/model_10s_{config.dstype}_train{config.cleanTrain}_val{config.cleanVal}_{modelname}_a{config.a}_min{config.min_snr}_max{config.max_snr}_{config.blockLength}block_{config.hopLength}slide_{num_epochs}epochs.h5')
         sys.exit()
     #plot_model(model, show_shapes=True, to_file='model' + str(i) + '.png')
     K.clear_session()
@@ -224,8 +257,21 @@ if __name__ == '__main__':
     # featureName = 'melspec'
     os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    print (config.cleanTrain)
+    print (config.cleanVal)
+    print (config.dstype)
     # os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID";
     # os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu)
     batchSize = config.batch
-    path = os.path.join(config.datasetDir, config.datasetName, 'features', 'featuresCleanPadded')
-    main(path, config.epochs, config.model, config.batch, config.blockLength, config.hopLength)
+    path = os.path.join(config.datasetDir, config.datasetName, 'features')
+    main(path, config.epochs, config.model, config.batch, config.blockLength, config.hopLength, config.dstype, config.cleanTrain, config.cleanVal)
+
+# if __name__ == '__main__':
+#     # featureName = 'melspec'
+#     os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
+#     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+#     batchSize = config.batch
+#     datasetPath = os.path.join(config.datasetDir, config.datasetName)
+#     AE = config.AEFeatureSet
+#     path = os.path.join(datasetPath, 'features')
+#     main(path, config.epochs, batchSize, config.blockLength, config.hopLength, datasetPath, AE)
